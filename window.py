@@ -26,7 +26,7 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -148,11 +148,11 @@ class TextGlowEffect(QGraphicsEffect):
 
 
 # 磨砂颗粒等级 → 实际像素大小映射
-_FROST_GRAIN_MAP = {1: 2, 2: 4, 3: 8}
+_FROST_GRAIN_MAP = {1: 1, 2: 2, 3: 4}
 
 def _frost_grain_pixels(level: int) -> int:
     """将磨砂颗粒等级(1-3)映射为实际 grain 像素值。"""
-    return _FROST_GRAIN_MAP.get(level, 2)
+    return _FROST_GRAIN_MAP.get(level, 1)
 
 
 class FrostedNoiseWidget(QWidget):
@@ -160,25 +160,38 @@ class FrostedNoiseWidget(QWidget):
 
     intensity 控制灰度扩散范围（明暗对比），强度越大颗粒明暗差异越明显。
     鼠标事件穿透到下层 viewer/editor。
+
+    性能优化：
+    resize 时噪点重生成有 150ms 防抖，拖拽缩放期间只拉伸旧缓存，
+    停止缩放后才按最终尺寸重新计算——避免每个像素变化都触发昂贵的像素级随机运算。
     """
 
     def __init__(
         self,
         parent: QWidget | None = None,
         intensity: float = 0.20,
-        grain: int = 2,
+        grain: int = 1,
     ) -> None:
         super().__init__(parent)
         self._intensity = max(0.0, min(intensity, 0.5))
-        self._grain = max(2, grain)
+        self._grain = max(1, grain)
         self._noise_cache: QImage | None = None
         self._cache_size: QSize = QSize(0, 0)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
+        # ── resize 防抖：拖拽缩放时不立即重算，停稳后再算 ──
+        self._debounce_timer = QTimer(self)
+        self._debounce_timer.setSingleShot(True)
+        self._debounce_timer.timeout.connect(self._regenerate_noise)
+        self._pending_size: QSize = QSize(0, 0)
+
     def set_params(self, intensity: float, grain: int) -> None:
+        """参数变化——立即重算，不走防抖（用户调整后希望立刻看到效果）。"""
         self._intensity = max(0.0, min(intensity, 0.5))
-        self._grain = max(2, grain)
+        self._grain = max(1, grain)
         self._noise_cache = None
+        self._pending_size = QSize(0, 0)
+        self._debounce_timer.stop()
         self.update()
 
     def paintEvent(self, event) -> None:  # type: ignore[override]
@@ -188,15 +201,48 @@ class FrostedNoiseWidget(QWidget):
         if sz.width() <= 0 or sz.height() <= 0:
             return
 
-        if self._noise_cache is None or self._cache_size != sz:
+        if self._noise_cache is not None and self._cache_size == sz:
+            # cache 命中：直接绘制
+            self._draw_cache(sz)
+            return
+
+        # 尺寸变化：记录待算尺寸，启动/刷新防抖
+        self._pending_size = sz
+        if not self._debounce_timer.isActive():
+            self._debounce_timer.start(150)  # 150ms 内稳定才重算
+
+        if self._noise_cache is not None:
+            # 有旧缓存：拉伸显示（噪点纹理拉伸基本看不出差别）
+            self._draw_cache(sz)
+        else:
+            # 无缓存（首次绘制）：立即生成
             self._noise_cache = self._generate_noise(sz)
             self._cache_size = sz
+            self._draw_cache(sz)
 
+    def _regenerate_noise(self) -> None:
+        """防抖到期：按最终待算尺寸重新生成噪点。"""
+        if self._pending_size.width() <= 0 or self._pending_size.height() <= 0:
+            return
+        sz = self._pending_size
+        self._noise_cache = self._generate_noise(sz)
+        self._cache_size = sz
+        self._pending_size = QSize(0, 0)
+        self.update()
+
+    def _draw_cache(self, sz: QSize) -> None:
+        """绘制当前缓存的噪点图，必要时拉伸到控件当前尺寸。"""
+        if self._noise_cache is None:
+            return
         painter = QPainter(self)
-        # intensity 越大 opacity 越高，保证渐变过渡自然
         opacity = min(self._intensity * 1.2, 0.4)
         painter.setOpacity(opacity)
-        painter.drawImage(0, 0, self._noise_cache)
+        # drawImage(dstRect, src, srcRect)：src→dst 自动拉伸
+        painter.drawImage(
+            QRect(0, 0, sz.width(), sz.height()),
+            self._noise_cache,
+            QRect(0, 0, self._cache_size.width(), self._cache_size.height()),
+        )
 
     def _generate_noise(self, size: QSize) -> QImage:
         """生成磨砂噪点纹理。
@@ -655,27 +701,15 @@ class WallpaperWindow(QWidget):
         WA_TranslucentBackground 创建了 WS_EX_LAYERED 窗口，
         Windows 默认会透过透明像素的点击。此方法强制返回 HTCLIENT，
         让所有鼠标事件都路由到 Qt，不依赖背景透明度。
+
+        注意：
+        不在 WM_NCHITTEST 中返回边缘缩放 HT 码（HTLEFT 等），因为：
+        - 返回边缘码后 Windows 会尝试接管光标和缩放行为
+        - 这与 Qt mouseMoveEvent 的 _update_cursor / _do_resize 冲突
+        - 由 Qt 侧统一管理光标和缩放在 WA_TranslucentBackground 下更稳定
         """
         msg = ctypes.wintypes.MSG.from_address(message.__int__())
         if msg.message == _WM_NCHITTEST:
-            # lParam 低 16 位 = x，高 16 位 = y（屏幕坐标）
-            lp = msg.lParam & 0xFFFFFFFF
-            sx = ctypes.c_int16(lp & 0xFFFF).value
-            sy = ctypes.c_int16((lp >> 16) & 0xFFFF).value
-            local = self.mapFromGlobal(QPoint(sx, sy))
-            edges = self._detect_edges(local)
-            if edges:
-                ht = (
-                    _HTTOPLEFT if edges == {"top", "left"} else
-                    _HTTOPRIGHT if edges == {"top", "right"} else
-                    _HTBOTTOMLEFT if edges == {"bottom", "left"} else
-                    _HTBOTTOMRIGHT if edges == {"bottom", "right"} else
-                    _HTLEFT if edges == {"left"} else
-                    _HTRIGHT if edges == {"right"} else
-                    _HTTOP if edges == {"top"} else
-                    _HTBOTTOM
-                )
-                return (True, ht)
             return (True, _HTCLIENT)
         return super().nativeEvent(event_type, message)
 
@@ -918,6 +952,8 @@ class WallpaperWindow(QWidget):
 
     def mouseMoveEvent(self, event) -> None:
         pos = event.position().toPoint()
+        edges = self._detect_edges(pos)
+        self._update_cursor(edges)
 
         if event.buttons() & Qt.MouseButton.LeftButton and self._drag_offset is not None:
             gp = event.globalPosition().toPoint()
@@ -925,10 +961,6 @@ class WallpaperWindow(QWidget):
                 self._do_resize(gp)
             else:
                 self.move(gp - self._drag_offset)
-        else:
-            # 仅移动鼠标，更新光标
-            edges = self._detect_edges(pos)
-            self._update_cursor(edges)
 
         super().mouseMoveEvent(event)
 
