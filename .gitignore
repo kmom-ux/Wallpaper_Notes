@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# User data (custom fonts, user-specific overrides)
+fonts/
+
+# Config (user-specific overrides)
+# If you customize these, uncomment to keep them out of git:
+# config.json
+# theme.json
