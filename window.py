@@ -723,7 +723,11 @@ class WallpaperWindow(QWidget):
         stack = self._current_stack()
         if stack is not None:
             stack.setCurrentIndex(1)
-            editor = stack.widget(1)
+            editor: QPlainTextEdit = stack.widget(1)
+            # 从文件重读内容到编辑器，避免显示层更新后编辑器仍持有旧内容
+            fp = self._current_filepath()
+            if fp:
+                editor.setPlainText(self._read_file(fp))
             editor.setFocus()
 
     def _save_and_switch_view(self) -> None:
