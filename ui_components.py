@@ -49,6 +49,14 @@ QTabBar::tab:selected {{
 QTabBar::tab:hover {{
     color: {active_color};
 }}
+QTabBar QPushButton {{
+    background: transparent;
+    border: none;
+    color: {text_color};
+}}
+QTabBar QPushButton:hover {{
+    color: {active_color};
+}}
 """
 
 _CONTENT_QSS = """
