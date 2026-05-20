@@ -163,5 +163,7 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         ).contents
         if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
             self.activated.emit()
-            return True, 0
+            # 返回 False 让 Qt 也正常派发消息到窗口过程——
+            # 可能影响 Windows 前台权限的授予时机。
+            return False, 0
         return False, 0

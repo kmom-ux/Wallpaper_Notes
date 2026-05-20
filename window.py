@@ -411,11 +411,13 @@ class WallpaperWindow(QWidget):
     def bring_to_front_and_edit(self) -> None:
         """快捷键唤出：恢复窗口 → 置前聚焦 → 编辑模式。
 
-        多层防御策略（优先 Win32 API，避免 Qt 事件重入）：
-        1. 临时 HWND_TOPMOST（保障视觉可见性，不切换焦点）
-        2. SetForegroundWindow（WM_HOTKEY 期间持有前台权限）
-        3. AttachThreadInput 绕过前台锁（后备）
-        4. 500ms 后取消 TOPMOST
+        多层防御策略：
+        1. 检查/修复 WS_EX_NOACTIVATE（Qt FramelessWindow 可能设置了此标志）
+        2. ShowWindow + HWND_TOPMOST（保障窗口可见和视觉层级）
+        3. SwitchToThisWindow —— 模拟 Alt+Tab，绕过前台锁（核心方案）
+        4. keybd_event Alt 键注入 —— 获得前台权限后 SetForegroundWindow
+        5. AttachThreadInput —— 经典后备方案
+        6. 500ms 后取消 TOPMOST
         """
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32
@@ -424,48 +426,68 @@ class WallpaperWindow(QWidget):
         SWP_NOMOVE = 0x0002
         SWP_NOSIZE = 0x0001
         SWP_SHOWWINDOW = 0x0040
-        SWP_NOACTIVATE = 0x0010
         HWND_TOPMOST = -1
+        GWL_EXSTYLE = -20
+        WS_EX_NOACTIVATE = 0x08000000
 
-        # 1. 恢复窗口状态（Win32 API，避免 Qt show() 重入）
+        # ── 1. 恢复窗口状态 ──
         if user32.IsIconic(hwnd):
             user32.ShowWindow(hwnd, 9)  # SW_RESTORE
         else:
             user32.ShowWindow(hwnd, 5)  # SW_SHOW
-        self.show()  # 轻量同步 Qt 内部状态
+        self.show()  # 同步 Qt 内部状态
 
-        # 2. 临时置顶（SWP_NOACTIVATE 确保不切换焦点，仅保证视觉在前）
+        # ── 2. 检查并移除 WS_EX_NOACTIVATE ──
+        # Qt FramelessWindowHint 在某些 Windows 版本/主题下
+        # 可能设置了此标志，阻止 SetForegroundWindow 激活窗口。
+        ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        if ex_style & WS_EX_NOACTIVATE:
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & ~WS_EX_NOACTIVATE)
+
+        # ── 3. HWND_TOPMOST（临时置顶，不设 SWP_NOACTIVATE，让 Windows 一并处理激活） ──
         user32.SetWindowPos(
             hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
         )
 
-        # 3. 尝试直接设置前台窗口
-        #    RegisterHotKey(NULL) 注册在消息队列上，WM_HOTKEY 处理期间
-        #    当前线程持有前台权限，SetForegroundWindow 理应成功。
-        if not user32.SetForegroundWindow(hwnd):
-            # 3b. AttachThreadInput：关联前台线程输入状态，绕过前台锁
-            fg_hwnd = user32.GetForegroundWindow()
-            if fg_hwnd:
-                tid = kernel32.GetCurrentThreadId()
-                fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
-                if fg_tid and fg_tid != tid:
-                    user32.AttachThreadInput(fg_tid, tid, True)
-                    user32.SetForegroundWindow(hwnd)
-                    user32.AttachThreadInput(fg_tid, tid, False)
+        # ── 4. SwitchToThisWindow（核心方案） ──
+        # Windows 用户32 API，模拟 Alt+Tab 切换行为。
+        # deprecated 但 Win10/11 仍然有效，不依赖 SetForegroundWindow 的前台权限。
+        user32.SwitchToThisWindow(hwnd, True)
 
-        # 4. 兜底调用
-        user32.SetForegroundWindow(hwnd)
+        # ── 5. SetForegroundWindow ──
+        # WM_HOTKEY 处理期间持有前台权限，通常能成功。
+        if not user32.SetForegroundWindow(hwnd):
+            # 5b. keybd_event：模拟 Alt 键按下/抬起
+            #     注入键盘输入后调用线程获得系统前台权限。
+            VK_MENU = 0x12
+            KEYEVENTF_KEYUP = 0x0002
+            user32.keybd_event(VK_MENU, 0, 0, 0)
+            user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+            user32.SetForegroundWindow(hwnd)
+
+            # 5c. AttachThreadInput：关联前台线程输入状态
+            if user32.GetForegroundWindow() != hwnd:
+                fg_hwnd = user32.GetForegroundWindow()
+                if fg_hwnd:
+                    tid = kernel32.GetCurrentThreadId()
+                    fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                    if fg_tid and fg_tid != tid:
+                        user32.AttachThreadInput(fg_tid, tid, True)
+                        user32.SetForegroundWindow(hwnd)
+                        user32.AttachThreadInput(fg_tid, tid, False)
+
+        # ── 6. BringWindowToTop 兜底 ──
         user32.BringWindowToTop(hwnd)
 
-        # 5. Qt 状态同步
+        # ── 7. Qt 状态同步 ──
         self.activateWindow()
         self.raise_()
 
-        # 6. 进入编辑模式
+        # ── 8. 进入编辑模式 ──
         self._switch_edit()
 
-        # 7. 延迟取消置顶（500ms 足够窗口稳定，又不至于永久压在别的东西上面）
+        # ── 9. 延迟取消置顶 ──
         QTimer.singleShot(500, self._restore_zorder)
 
     def _restore_zorder(self) -> None:
