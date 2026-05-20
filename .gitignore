@@ -22,5 +22,6 @@ fonts/
 # If you customize these, uncomment to keep them out of git:
 # config.json
 # theme.json
-notes/
+notes/*
+!notes/.gitkeep
 开发者指南/深度分析报告.md
