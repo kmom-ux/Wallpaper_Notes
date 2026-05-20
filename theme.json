@@ -1,9 +1,6 @@
 {
   "window": {
-    "background_color": "rgba(255,255,255,0.11)",
-    "border_radius": 0,
-    "border_color": "rgba(200,200,200,0.50)",
-    "border_width": 0
+    "border_radius": 0
   },
   "tab_bar": {
     "background_color": "rgba(255,255,255,0.71)",
@@ -16,16 +13,16 @@
     "padding_v": 8
   },
   "content": {
-    "background_color": "rgba(255,85,127,0.44)",
+    "background_color": "rgba(0,255,255,0.23)",
     "text_color": "#55ffff",
     "font_size": 27,
     "font_family": "Microsoft YaHei UI",
     "line_height": 1.6,
     "padding_h": 16,
     "padding_v": 16,
-    "pane_border_color": "rgba(85,255,255,0.00)",
-    "pane_border_width": 3,
-    "pane_border_radius": 5,
+    "pane_border_color": "rgba(0,0,0,0.31)",
+    "pane_border_width": 2,
+    "pane_border_radius": 2,
     "heading_font_family": "Source Han Serif SC",
     "heading_color": "#ffffff",
     "enable_glass": true,

@@ -18,14 +18,6 @@ from PySide6.QtWidgets import QTabWidget
 
 # ── QSS 生成 ──────────────────────────────────────────────────
 
-_WINDOW_QSS = """
-WallpaperWindow {{
-    background-color: {bg};
-    border-radius: {radius}px;
-    border: {bw}px solid {bc};
-}}
-"""
-
 _TAB_QSS = """
 QTabBar {{
     background-color: {bg};
@@ -123,17 +115,6 @@ QScrollBar::sub-line:horizontal {{
 """
 
 
-def generate_window_qss(theme: dict[str, Any]) -> str:
-    """窗口级样式。"""
-    w = theme.get("window", {})
-    return _WINDOW_QSS.format(
-        bg=_s(w, "background_color", "rgba(255,255,255,0.85)"),
-        radius=_i(w, "border_radius", 12),
-        bw=_i(w, "border_width", 1),
-        bc=_s(w, "border_color", "rgba(200,200,200,0.5)"),
-    )
-
-
 def generate_tab_bar_qss(theme: dict[str, Any]) -> str:
     """标签栏样式。"""
     tb = theme.get("tab_bar", {})
@@ -193,8 +174,7 @@ def generate_scrollbar_qss(theme: dict[str, Any]) -> str:
 def build_global_qss(theme: dict[str, Any]) -> str:
     """一次性生成窗口级和容器级 QSS（子控件样式由局部覆盖）。"""
     return (
-        generate_window_qss(theme)
-        + generate_tab_bar_qss(theme)
+        generate_tab_bar_qss(theme)
         + generate_scrollbar_qss(theme)
     )
 

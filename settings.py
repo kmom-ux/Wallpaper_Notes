@@ -452,22 +452,8 @@ class SettingsDialog(QDialog):
         w = self._theme.get("window", {})
         g = QGroupBox("窗口样式")
         gl = QVBoxLayout(g)
-        self._win_bg = self._add_color_row(
-            gl,
-            "背景色：",
-            w.get("background_color", "rgba(255,255,255,0.85)"),
-        )
         self._win_radius = self._add_spin_row(
             gl, "圆角：", w.get("border_radius", 12), 0, 50
-        )
-        self._win_bw = self._add_spin_row(
-            gl, "边框宽：", w.get("border_width", 1), 0, 10
-        )
-        self._win_bc = self._add_color_row(
-            gl,
-            "边框色：",
-            w.get("border_color", "rgba(200,200,200,0.5)"),
-            title="窗口边框颜色",
         )
         return g
 
@@ -781,10 +767,7 @@ class SettingsDialog(QDialog):
         theme = copy.deepcopy(self._theme)
 
         theme.setdefault("window", {})
-        theme["window"]["background_color"] = self._win_bg.get_css_color()
         theme["window"]["border_radius"] = self._win_radius.value()
-        theme["window"]["border_width"] = self._win_bw.value()
-        theme["window"]["border_color"] = self._win_bc.get_css_color()
 
         theme.setdefault("tab_bar", {})
         theme["tab_bar"]["background_color"] = self._tab_bg.get_css_color()
