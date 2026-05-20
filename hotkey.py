@@ -131,6 +131,7 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
             print(f"⚠ RegisterHotKey 失败 (错误码: {err})")
             return False
 
+        print(f"✓ 热键已注册 (id={self._hotkey_id}, mods={self._mod_flags:#x}, vk={self._vk:#x})")
         QApplication.instance().installNativeEventFilter(self)
         self._registered = True
         return True
@@ -158,15 +159,13 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
     # ── nativeEventFilter ───────────────────────────────────────
 
     def nativeEventFilter(self, event_type: bytes, message) -> tuple[bool, int]:
-        """捕获 WM_HOTKEY 消息，发射 activated 信号。
-
-        message 类型：PySide2 传 int，PySide6 传 sip.voidptr。
-        统一通过 int() 转为地址值再构造 MSG 指针。
-        """
-        msg_addr = int(message)  # 兼容两种类型
+        """捕获 WM_HOTKEY 消息，发射 activated 信号。"""
+        msg_addr = int(message)
         msg = ctypes.cast(
             ctypes.c_void_p(msg_addr), ctypes.POINTER(_MSG)
         ).contents
         if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
+            print(f"✓ WM_HOTKEY 捕获 (id={self._hotkey_id}) → 发射 activated")
             self.activated.emit()
+            return True, 0
         return False, 0

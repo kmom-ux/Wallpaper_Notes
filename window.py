@@ -414,6 +414,7 @@ class WallpaperWindow(QWidget):
         RegisterHotKey 触发时 Windows 已自动授权 SetForegroundWindow，
         不需要 AttachThreadInput 技巧。
         """
+        print("✓ bring_to_front_and_edit 被调用")
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32
         SWP_NOMOVE = 0x0002
