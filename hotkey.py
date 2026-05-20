@@ -109,16 +109,19 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
 
     # ── 公开接口 ────────────────────────────────────────────────
 
-    def register(self) -> bool:
-        """注册全局热键，成功返回 True。
+    def register(self, target_hwnd: int | None = None) -> bool:
+        """注册全局热键。
 
-        HWND 从当前 QApplication 的焦点窗口获取。
-        MVP：在窗口创建之后调用，确保可获取 HWND。
+        target_hwnd: 接收 WM_HOTKEY 的窗口句柄。
+        如果不传，自动从当前应用获取。
         """
         if self._registered:
             return True
 
-        hwnd = self._get_hwnd()
+        if target_hwnd is not None:
+            hwnd = target_hwnd
+        else:
+            hwnd = self._get_hwnd()
         if hwnd is None:
             return False
 

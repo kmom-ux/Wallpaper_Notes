@@ -66,7 +66,6 @@ from ui_components import (
 
 _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
-_HWND_TOPMOST = -1
 _HWND_NOTOPMOST = -2
 _HWND_BOTTOM = 1
 _RESIZE_MARGIN = 8  # 边缘缩放触发距离 (px)
@@ -410,44 +409,46 @@ class WallpaperWindow(QWidget):
         viewer.setHtml(render(content, self._theme))
 
     def bring_to_front_and_edit(self) -> None:
-        """快捷键唤出：置顶 + 编辑模式 + 聚焦。
+        """快捷键唤出：恢复窗口 → 置顶 → 前台聚焦 → 编辑模式。
 
-        由 app.py 在收到 HotkeyManager.activated 信号时调用。
-        """
-        self.show()
-        self.raise_()
-        self._set_topmost()
-        self._switch_edit()
-        self._set_foreground()
-
-    def _set_foreground(self) -> None:
-        """通过 Windows API 将窗口带到前台并给予键盘焦点。
-
-        核心问题：Windows 默认阻止后台进程通过 SetForegroundWindow 偷焦。
-        解法：AttachThreadInput 将当前窗口的输入线程临时挂接到前台窗口的输入线程，
-        绕过前台锁定后再调用 SetForegroundWindow。
+        RegisterHotKey 触发时 Windows 已自动授权 SetForegroundWindow，
+        不需要 AttachThreadInput 技巧。
         """
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_SHOWWINDOW = 0x0040
 
-        foreground_hwnd = user32.GetForegroundWindow()
-        if foreground_hwnd and foreground_hwnd != hwnd:
-            pid = wintypes.DWORD()
-            foreground_tid = user32.GetWindowThreadProcessId(
-                foreground_hwnd, ctypes.byref(pid)
-            )
-            our_tid = user32.GetWindowThreadProcessId(hwnd, None)
+        # 1. 如果最小化，先恢复窗口
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
 
-            if foreground_tid != our_tid:
-                # 挂接输入线程 → 允许聚焦
-                user32.AttachThreadInput(our_tid, foreground_tid, True)
-                user32.SetForegroundWindow(hwnd)
-                # 立即断开
-                user32.AttachThreadInput(our_tid, foreground_tid, False)
-                return
+        # 2. 临时置顶 + 确保可见
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
 
-        # 窗口已在最前或同一线程：直接聚焦
+        # 3. 前台聚焦（RegisterHotKey 已授权，不需要 AttachThreadInput）
         user32.SetForegroundWindow(hwnd)
+        user32.BringWindowToTop(hwnd)
+
+        # 4. Qt 层面激活
+        self.activateWindow()
+        self.raise_()
+
+        # 5. 进入编辑模式
+        self._switch_edit()
+
+        # 6. 300ms 后取消置顶（避免永远压在其他窗口上面）
+        QTimer.singleShot(300, self._restore_zorder)
+
+    def _restore_zorder(self) -> None:
+        """取消置顶，回到正常 Z 序。"""
+        hwnd = int(self.winId())
+        ctypes.windll.user32.SetWindowPos(
+            hwnd, _HWND_NOTOPMOST, 0, 0, 0, 0, _SWP_NOMOVE | _SWP_NOSIZE
+        )
 
     def return_to_desktop_layer(self) -> None:
         """保存内容 → 返回显示模式 → 回到桌面层。"""
@@ -681,18 +682,6 @@ class WallpaperWindow(QWidget):
         hwnd = int(self.winId())
         ctypes.windll.user32.SetWindowPos(
             hwnd, _HWND_BOTTOM, 0, 0, 0, 0, _SWP_NOMOVE | _SWP_NOSIZE
-        )
-
-    def _set_topmost(self) -> None:
-        """窗口置顶。"""
-        self._set_window_topmost(True)
-
-    def _set_window_topmost(self, topmost: bool) -> None:
-        """通过 Windows API 切换置顶状态（避免 setWindowFlags 导致窗口闪烁）。"""
-        hwnd = int(self.winId())
-        flag = _HWND_TOPMOST if topmost else _HWND_NOTOPMOST
-        ctypes.windll.user32.SetWindowPos(
-            hwnd, flag, 0, 0, 0, 0, _SWP_NOMOVE | _SWP_NOSIZE
         )
 
     # ── Windows 原生消息 ────────────────────────────────────────
