@@ -3,7 +3,7 @@
     "border_radius": 0
   },
   "tab_bar": {
-    "background_color": "#ffffff",
+    "background_color": "rgba(255,255,255,0.00)",
     "text_color": "#2b2b2b",
     "active_text_color": "#000000",
     "active_indicator_color": "#4a90d9",
@@ -14,7 +14,7 @@
     "padding_v": 8
   },
   "content": {
-    "background_color": "rgba(0,0,0,0.23)",
+    "background_color": "rgba(0,0,0,0.00)",
     "text_color": "#55ffff",
     "font_size": 14,
     "font_family": "Microsoft YaHei UI",
@@ -26,7 +26,7 @@
     "pane_border_radius": 21,
     "heading_font_family": "Source Han Serif SC",
     "heading_color": "#ffffff",
-    "enable_glass": true,
+    "enable_glass": false,
     "glass_opacity": 0.27,
     "enable_glow": false,
     "enable_frost": false,
