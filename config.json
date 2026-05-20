@@ -10,12 +10,10 @@
       "ctrl",
       "alt"
     ],
-    "key": "a",
-    "description": "全局快捷键：唤起便签置顶编辑"
+    "key": "a"
   },
   "behavior": {
     "autostart": true,
-    "auto_save_interval_ms": 3000,
     "notes_dir": "notes"
   }
 }

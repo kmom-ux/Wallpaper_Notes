@@ -27,8 +27,11 @@ WallpaperWindow {{
 """
 
 _TAB_QSS = """
+QTabBar {{
+    background-color: {bg};
+}}
 QTabWidget::pane {{
-    background-color: {pane_bg};
+    background-color: transparent;
 }}
 QTabBar::tab {{
     background: transparent;
@@ -127,7 +130,7 @@ def generate_tab_bar_qss(theme: dict[str, Any]) -> str:
     """标签栏样式。"""
     tb = theme.get("tab_bar", {})
     return _TAB_QSS.format(
-        pane_bg=_s(tb, "background_color", "rgba(245,245,245,0.9)"),
+        bg=_s(tb, "background_color", "rgba(245,245,245,0.9)"),
         text_color=_s(tb, "text_color", "#666666"),
         font_family=_s(tb, "font_family", "Microsoft YaHei"),
         font_size=_i(tb, "font_size", 14),
@@ -180,12 +183,10 @@ def generate_scrollbar_qss(theme: dict[str, Any]) -> str:
 # ── 合并样式表 ────────────────────────────────────────────────
 
 def build_global_qss(theme: dict[str, Any]) -> str:
-    """一次性生成所有组件的 QSS 并合并。"""
+    """一次性生成窗口级和容器级 QSS（子控件样式由局部覆盖）。"""
     return (
         generate_window_qss(theme)
         + generate_tab_bar_qss(theme)
-        + generate_content_qss(theme)
-        + generate_editor_qss(theme)
         + generate_scrollbar_qss(theme)
     )
 

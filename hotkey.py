@@ -119,9 +119,7 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
             return True
 
         hwnd = self._get_hwnd()
-        print(f"[Hotkey] HWND={hwnd}, mods=0x{self._mod_flags:04x}, vk=0x{self._vk:02x}({self._vk}), id=0x{self._hotkey_id:04x}", flush=True)
         if hwnd is None:
-            print(f"[Hotkey] HWND 为 None，注册失败", flush=True)
             return False
 
         user32 = ctypes.windll.user32
@@ -131,14 +129,11 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
             self._mod_flags,
             self._vk,
         )
-        print(f"[Hotkey] RegisterHotKey 结果: {result}", flush=True)
         if result == 0:
-            print(f"[Hotkey] [X] 注册失败! 快捷键可能被其他程序占用", flush=True)
             return False
 
         QApplication.instance().installNativeEventFilter(self)
         self._registered = True
-        print(f"[Hotkey] [OK] 注册成功，已安装 nativeEventFilter", flush=True)
         return True
 
     def unregister(self) -> None:
@@ -173,11 +168,8 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         msg = ctypes.cast(
             ctypes.c_void_p(msg_addr), ctypes.POINTER(_MSG)
         ).contents
-        if msg.message == WM_HOTKEY:
-            print(f"[Hotkey] 收到 WM_HOTKEY, wParam=0x{msg.wParam:x}, 期望=0x{self._hotkey_id:x}", flush=True)
-            if msg.wParam == self._hotkey_id:
-                print(f"[Hotkey] [OK] 匹配! 发射 activated 信号", flush=True)
-                self.activated.emit()
+        if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
+            self.activated.emit()
         return False, 0
 
     # ── 内部 ────────────────────────────────────────────────────

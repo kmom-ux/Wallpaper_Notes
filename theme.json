@@ -3,14 +3,7 @@
     "background_color": "rgba(255,255,255,0.56)",
     "border_radius": 0,
     "border_color": "rgba(200,200,200,0.50)",
-    "border_width": 0,
-    "shadow": {
-      "enabled": true,
-      "color": "rgba(0, 0, 0, 0.15)",
-      "blur": 20,
-      "offset_x": 0,
-      "offset_y": 4
-    }
+    "border_width": 0
   },
   "tab_bar": {
     "background_color": "rgba(255,255,255,0.71)",
@@ -19,7 +12,6 @@
     "active_indicator_color": "#4a90d9",
     "font_size": 14,
     "font_family": "Microsoft YaHei",
-    "height": 36,
     "padding_h": 12,
     "padding_v": 8
   },

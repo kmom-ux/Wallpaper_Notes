@@ -26,7 +26,7 @@ from ctypes import wintypes
 from pathlib import Path
 from typing import Any, Callable
 
-from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -296,7 +296,7 @@ class WallpaperWindow(QWidget):
     """无边框桌面便签主窗口。"""
 
     # 内部信号（非公开 API）
-    _title_changed = Signal(str)  # 标题栏显示用（保留）
+
 
     def __init__(
         self,
@@ -414,13 +414,11 @@ class WallpaperWindow(QWidget):
 
         由 app.py 在收到 HotkeyManager.activated 信号时调用。
         """
-        print("[Window] bring_to_front_and_edit 被调用", flush=True)
         self.show()
         self.raise_()
         self._set_topmost()
         self._switch_edit()
         self._set_foreground()
-        print("[Window] 完成", flush=True)
 
     def _set_foreground(self) -> None:
         """通过 Windows API 将窗口带到前台并给予键盘焦点。
@@ -914,7 +912,7 @@ class WallpaperWindow(QWidget):
         if etype == QEvent.Type.MouseButtonDblClick and editing:
             self._edit_dblclick_count += 1
             self._edit_dblclick_timer.start(QApplication.doubleClickInterval())
-            if self._edit_dblclick_count >= 2:  # 2 次 DblClick = 3 次物理点击
+            if self._edit_dblclick_count >= 1:  # 1 次 DblClick + 1 次物理点击 = 3 次实际点击
                 self._edit_dblclick_count = 0
                 self._edit_dblclick_timer.stop()
                 self._save_and_switch_view()

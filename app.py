@@ -69,12 +69,7 @@ class App:
 
         # ── 全局热键 ──
         modifiers, key = self._config.get_hotkey()
-        print("[App] modifiers:", modifiers, "key:", key, flush=True)
         self._hotkey = HotkeyManager(modifiers, key)
-        # 先输出调试，再调用实际功能
-        self._hotkey.activated.connect(
-            lambda: print("[App] 热键信号被触发!", flush=True)
-        )
         self._hotkey.activated.connect(self._window.bring_to_front_and_edit)
 
         # ── 应用图标 ──
@@ -100,7 +95,6 @@ class App:
     # ── 生命周期 ────────────────────────────────────────────────
 
     def run(self) -> None:
-        print("[App] run() 进入事件循环", flush=True)
         self._window.show()
         # 窗口显示后再注册热键，确保 HWND 稳定
         self._hotkey.register()
