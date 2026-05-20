@@ -409,40 +409,64 @@ class WallpaperWindow(QWidget):
         viewer.setHtml(render(content, self._theme))
 
     def bring_to_front_and_edit(self) -> None:
-        """快捷键唤出：恢复窗口 → 置顶 → 前台聚焦 → 编辑模式。
+        """快捷键唤出：恢复窗口 → 置前聚焦 → 编辑模式。
 
-        RegisterHotKey 触发时 Windows 已自动授权 SetForegroundWindow，
-        不需要 AttachThreadInput 技巧。
+        多层防御策略（优先 Win32 API，避免 Qt 事件重入）：
+        1. 临时 HWND_TOPMOST（保障视觉可见性，不切换焦点）
+        2. SetForegroundWindow（WM_HOTKEY 期间持有前台权限）
+        3. AttachThreadInput 绕过前台锁（后备）
+        4. 500ms 后取消 TOPMOST
         """
-        print("✓ bring_to_front_and_edit 被调用")
         hwnd = int(self.winId())
         user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+
         SWP_NOMOVE = 0x0002
         SWP_NOSIZE = 0x0001
         SWP_SHOWWINDOW = 0x0040
+        SWP_NOACTIVATE = 0x0010
+        HWND_TOPMOST = -1
 
-        # 1. 如果最小化，先恢复窗口
-        if self.isMinimized():
-            self.showNormal()
-        self.show()
+        # 1. 恢复窗口状态（Win32 API，避免 Qt show() 重入）
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        else:
+            user32.ShowWindow(hwnd, 5)  # SW_SHOW
+        self.show()  # 轻量同步 Qt 内部状态
 
-        # 2. 临时置顶 + 确保可见
-        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0,
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+        # 2. 临时置顶（SWP_NOACTIVATE 确保不切换焦点，仅保证视觉在前）
+        user32.SetWindowPos(
+            hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+        )
 
-        # 3. 前台聚焦（RegisterHotKey 已授权，不需要 AttachThreadInput）
+        # 3. 尝试直接设置前台窗口
+        #    RegisterHotKey(NULL) 注册在消息队列上，WM_HOTKEY 处理期间
+        #    当前线程持有前台权限，SetForegroundWindow 理应成功。
+        if not user32.SetForegroundWindow(hwnd):
+            # 3b. AttachThreadInput：关联前台线程输入状态，绕过前台锁
+            fg_hwnd = user32.GetForegroundWindow()
+            if fg_hwnd:
+                tid = kernel32.GetCurrentThreadId()
+                fg_tid = user32.GetWindowThreadProcessId(fg_hwnd, None)
+                if fg_tid and fg_tid != tid:
+                    user32.AttachThreadInput(fg_tid, tid, True)
+                    user32.SetForegroundWindow(hwnd)
+                    user32.AttachThreadInput(fg_tid, tid, False)
+
+        # 4. 兜底调用
         user32.SetForegroundWindow(hwnd)
         user32.BringWindowToTop(hwnd)
 
-        # 4. Qt 层面激活
+        # 5. Qt 状态同步
         self.activateWindow()
         self.raise_()
 
-        # 5. 进入编辑模式
+        # 6. 进入编辑模式
         self._switch_edit()
 
-        # 6. 300ms 后取消置顶（避免永远压在其他窗口上面）
-        QTimer.singleShot(300, self._restore_zorder)
+        # 7. 延迟取消置顶（500ms 足够窗口稳定，又不至于永久压在别的东西上面）
+        QTimer.singleShot(500, self._restore_zorder)
 
     def _restore_zorder(self) -> None:
         """取消置顶，回到正常 Z 序。"""

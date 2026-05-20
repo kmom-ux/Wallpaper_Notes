@@ -127,11 +127,8 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
             self._vk,
         )
         if result == 0:
-            err = ctypes.windll.kernel32.GetLastError()
-            print(f"⚠ RegisterHotKey 失败 (错误码: {err})")
             return False
 
-        print(f"✓ 热键已注册 (id={self._hotkey_id}, mods={self._mod_flags:#x}, vk={self._vk:#x})")
         QApplication.instance().installNativeEventFilter(self)
         self._registered = True
         return True
@@ -165,7 +162,6 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
             ctypes.c_void_p(msg_addr), ctypes.POINTER(_MSG)
         ).contents
         if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
-            print(f"✓ WM_HOTKEY 捕获 (id={self._hotkey_id}) → 发射 activated")
             self.activated.emit()
             return True, 0
         return False, 0
