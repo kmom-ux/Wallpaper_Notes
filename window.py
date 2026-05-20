@@ -470,6 +470,8 @@ class WallpaperWindow(QWidget):
         bw = ct.get("pane_border_width", 1)
         bc = ct.get("pane_border_color", "rgba(200,200,200,0.5)")
         br = ct.get("pane_border_radius", 4)
+        # 当边框宽度为 0 时取消圆角，防止玻璃渐变背景被 border-radius 裁切出视觉断层
+        final_br = br if bw > 0 else 0
         win_r = theme.get("window", {}).get("border_radius", 12)
         self._main_layout.setContentsMargins(0, 0, 0, win_r)
         glass_qss = _build_glass_qss(
@@ -480,7 +482,7 @@ class WallpaperWindow(QWidget):
             "QStackedWidget {"
             f"{glass_qss}"
             f"  border: {bw}px solid {bc};"
-            f"  border-radius: 0px 0px {br}px {br}px;"
+            f"  border-radius: 0px 0px {final_br}px {final_br}px;"
             "}"
         )
         enable_glow = ct.get("enable_glow", False)
@@ -597,6 +599,8 @@ class WallpaperWindow(QWidget):
         bw = ct.get("pane_border_width", 1)
         bc = ct.get("pane_border_color", "rgba(200,200,200,0.5)")
         br = ct.get("pane_border_radius", 4)
+        # 当边框宽度为 0 时取消圆角，防止玻璃渐变背景被 border-radius 裁切出视觉断层
+        final_br = br if bw > 0 else 0
         glass_qss = _build_glass_qss(
             ct.get("glass_opacity", 0.10)
             if ct.get("enable_glass", False) else 0.0
@@ -605,7 +609,7 @@ class WallpaperWindow(QWidget):
             "QStackedWidget {"
             f"{glass_qss}"
             f"  border: {bw}px solid {bc};"
-            f"  border-radius: 0px 0px {br}px {br}px;"
+            f"  border-radius: 0px 0px {final_br}px {final_br}px;"
             "}"
         )
 
