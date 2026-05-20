@@ -13,7 +13,6 @@ import ctypes
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -70,7 +69,9 @@ class App:
         # ── 全局热键 ──
         modifiers, key = self._config.get_hotkey()
         self._hotkey = HotkeyManager(modifiers, key)
-        self._hotkey.activated.connect(self._window.bring_to_front_and_edit)
+        # 热键 ID 传给窗口，让窗口在 nativeEvent 中直接处理 WM_HOTKEY
+        # （不再经过信号连接，确保窗口过程内持有前台权限）
+        self._window.set_hotkey_id(self._hotkey.hotkey_id)
 
         # ── 应用图标 ──
         app_icon = QIcon(r"D:\app1111\Wallpaper_Notes\note_app_icon_final.ico")
@@ -96,8 +97,9 @@ class App:
 
     def run(self) -> None:
         self._window.show()
-        # 注册全局热键（RegisterHotKey(NULL) = 线程级，不依赖 HWND 稳定性）
-        self._hotkey.register()
+        # 注册全局热键在窗口 HWND 上，确保 WM_HOTKEY 经窗口过程派发
+        # （此时线程拥有前台权限，SetForegroundWindow 理应成功）
+        self._hotkey.register(target_hwnd=int(self._window.winId()))
         QApplication.instance().exec()
 
     def _quit(self) -> None:
@@ -158,7 +160,7 @@ class App:
         config_dict["hotkey"]["modifiers"] = new_mods
         config_dict["hotkey"]["key"] = new_key
         self._config.save_config(config_dict)
-        self._hotkey.rebind(new_mods, new_key)
+        self._hotkey.rebind(new_mods, new_key, target_hwnd=int(self._window.winId()))
 
         # 保存并应用新主题
         self._apply_theme(new_theme)

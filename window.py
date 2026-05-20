@@ -15,7 +15,7 @@
 
 边界：
 - 不直接操作文件（通过 callbacks）
-- 不管理快捷键（由 app.py 接收 activated 信号后调用 bring_to_front_and_edit）
+- 不管理快捷键（WM_HOTKEY 由 window.nativeEvent 处理）
 """
 
 from __future__ import annotations
@@ -327,6 +327,9 @@ class WallpaperWindow(QWidget):
 
         # 窗口圆角半径（用于 setMask 剪辑，WA_TranslucentBackground 下 QSS 圆角不生效）
         self._border_radius: int = theme.get("window", {}).get("border_radius", 12)
+
+        # 热键 ID（由 app.py 在 HotkeyManager 创建后设置）
+        self._hotkey_id: int | None = None
 
         # 编辑模式三击退出追踪
         self._edit_dblclick_count: int = 0
@@ -733,22 +736,38 @@ class WallpaperWindow(QWidget):
 
     # ── Windows 原生消息 ────────────────────────────────────────
 
-    def nativeEvent(self, event_type: bytes, message) -> tuple[bool, int]:
-        """拦截 WM_NCHITTEST，确保全窗口区域接收鼠标事件。
+    def set_hotkey_id(self, hotkey_id: int) -> None:
+        """由 app.py 在创建 HotkeyManager 后调用，记录热键 ID。
 
+        nativeEvent 需要此 ID 来识别 WM_HOTKEY。
+        """
+        self._hotkey_id = hotkey_id
+
+    def nativeEvent(self, event_type: bytes, message) -> tuple[bool, int]:
+        """拦截原生 Windows 消息：WM_HOTKEY + WM_NCHITTEST。
+
+        WM_HOTKEY：
+        RegisterHotKey 注册在窗口 HWND 上，WM_HOTKEY 经 Qt 内部
+        窗口过程派发到此方法。此时线程拥有完整前台权限，
+        SetForegroundWindow 理应成功。
+
+        WM_NCHITTEST：
         WA_TranslucentBackground 创建了 WS_EX_LAYERED 窗口，
         Windows 默认会透过透明像素的点击。此方法强制返回 HTCLIENT，
         让所有鼠标事件都路由到 Qt，不依赖背景透明度。
-
-        注意：
-        不在 WM_NCHITTEST 中返回边缘缩放 HT 码（HTLEFT 等），因为：
-        - 返回边缘码后 Windows 会尝试接管光标和缩放行为
-        - 这与 Qt mouseMoveEvent 的 _update_cursor / _do_resize 冲突
-        - 由 Qt 侧统一管理光标和缩放在 WA_TranslucentBackground 下更稳定
         """
         msg = ctypes.wintypes.MSG.from_address(message.__int__())
+
+        # WM_HOTKEY —— 窗口过程内处理，前台权限充足
+        if msg.message == 0x0312 and self._hotkey_id is not None:
+            if msg.wParam == self._hotkey_id:
+                self.bring_to_front_and_edit()
+                return (True, 0)
+
+        # WM_NCHITTEST
         if msg.message == _WM_NCHITTEST:
             return (True, _HTCLIENT)
+
         return super().nativeEvent(event_type, message)
 
     # ── 模式切换 ────────────────────────────────────────────────

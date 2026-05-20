@@ -1,13 +1,13 @@
 """全局热键注册器。
 
 职责：
-1. 使用 Windows API（RegisterHotKey + WM_HOTKEY）注册系统级热键
-2. 热键触发时发射 activated 信号
-3. 零额外依赖，仅依赖 ctypes
+1. 使用 Windows API RegisterHotKey 注册系统级热键
+2. 注册在**窗口 HWND** 上（非线程队列），确保 WM_HOTKEY 经过
+   窗口过程派发，使 SetForegroundWindow 获得完整前台权限
 
 边界：
-- 只做「检测到快捷键 → 发信号」这一件事
-- 不关心快捷键触发后做什么
+- 只做「注册/注销」这一件事
+- WM_HOTKEY 的处理交由 WallpaperWindow.nativeEvent() 完成
 """
 
 from __future__ import annotations
@@ -15,12 +15,9 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QObject, Signal
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QObject
 
 # ── Windows 常量 ──────────────────────────────────────────────
-
-WM_HOTKEY = 0x0312
 
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
@@ -44,17 +41,6 @@ _VK_MAP: dict[str, int] = {
     "pageup": 0x21, "pagedown": 0x22,
 }
 
-# MSG 结构体（用于解析 nativeEventFilter 中的消息）
-class _MSG(ctypes.Structure):
-    _fields_ = [
-        ("hwnd", wintypes.HWND),
-        ("message", wintypes.UINT),
-        ("wParam", wintypes.WPARAM),
-        ("lParam", wintypes.LPARAM),
-        ("time", wintypes.DWORD),
-        ("pt", wintypes.POINT),
-    ]
-
 
 def _modifiers_to_flags(modifiers: list[str]) -> int:
     """将 ['ctrl', 'shift'] 转为 Windows modifier flag。"""
@@ -73,27 +59,23 @@ def _modifiers_to_flags(modifiers: list[str]) -> int:
 
 
 def _key_to_vk(key: str) -> int:
-    """将键名字符串转为虚拟键码。
-
-    字母 'a'..'z'、数字 '0'..'9'、功能键 'f1'..'f12' 等。
-    """
+    """将键名字符串转为虚拟键码。"""
     lower = key.lower()
     if lower in _VK_MAP:
         return _VK_MAP[lower]
-    if len(key) == 1:
-        # 单字符：直接取大写 ASCII
-        return ord(key.upper())
-    return ord(key.upper())  # 回退
+    return ord(key.upper())
 
 
 # ═══════════════════════════════════════════════════════════════
 # HotkeyManager
 # ═══════════════════════════════════════════════════════════════
 
-class HotkeyManager(QObject, QAbstractNativeEventFilter):
-    """系统级全局热键管理。"""
+class HotkeyManager(QObject):
+    """系统级全局热键管理。
 
-    activated = Signal()  # 快捷键被按下
+    注册在全景窗口的 HWND 上，使 WM_HOTKEY 经过窗口过程派发，
+    确保 SetForegroundWindow 在响应时拥有完整前台权限。
+    """
 
     def __init__(
         self,
@@ -104,24 +86,28 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         super().__init__(parent)
         self._mod_flags = _modifiers_to_flags(modifiers)
         self._vk = _key_to_vk(key)
-        self._hotkey_id = (id(self) % 0xBFFF) + 1  # 唯一 ID（1..0xBFFF，Windows 热键有效范围）
+        self._hotkey_id = (id(self) % 0xBFFF) + 1
         self._registered = False
+        self._hwnd: int | None = None  # 注册时所用的 HWND
 
     # ── 公开接口 ────────────────────────────────────────────────
 
-    def register(self, target_hwnd: int | None = None) -> bool:
-        """注册全局热键。
+    @property
+    def hotkey_id(self) -> int:
+        return self._hotkey_id
 
-        使用 RegisterHotKey(NULL, ...) 注册在线程消息队列上，
-        不依赖特定 HWND（避免 WA_TranslucentBackground 导致 HWND 重建后失效）。
+    def register(self, target_hwnd: int) -> bool:
+        """注册全局热键在指定窗口 HWND 上。
+
+        关键差异：HWND ≠ None → WM_HOTKEY 直接派发到窗口过程，
+        非线程队列。SetForegroundWindow 在此期间获得前台权限。
         """
         if self._registered:
             return True
 
         user32 = ctypes.windll.user32
-        # 使用 NULL HWND → WM_HOTKEY 发布到线程消息队列
         result = user32.RegisterHotKey(
-            None,  # NULL HWND = thread-wide
+            target_hwnd,
             self._hotkey_id,
             self._mod_flags,
             self._vk,
@@ -129,7 +115,7 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         if result == 0:
             return False
 
-        QApplication.instance().installNativeEventFilter(self)
+        self._hwnd = target_hwnd
         self._registered = True
         return True
 
@@ -138,32 +124,17 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         if not self._registered:
             return
         user32 = ctypes.windll.user32
-        user32.UnregisterHotKey(None, self._hotkey_id)
-        QApplication.instance().removeNativeEventFilter(self)
+        user32.UnregisterHotKey(self._hwnd, self._hotkey_id)
         self._registered = False
+        self._hwnd = None
 
-    def rebind(self, modifiers: list[str], key: str) -> bool:
+    def rebind(self, modifiers: list[str], key: str, target_hwnd: int) -> bool:
         """重新绑定快捷键（先注销旧键，再注册新键）。"""
         was_registered = self._registered
         if self._registered:
             self.unregister()
         self._mod_flags = _modifiers_to_flags(modifiers)
         self._vk = _key_to_vk(key)
-        if was_registered:
-            return self.register()
+        if was_registered and target_hwnd:
+            return self.register(target_hwnd)
         return True
-
-    # ── nativeEventFilter ───────────────────────────────────────
-
-    def nativeEventFilter(self, event_type: bytes, message) -> tuple[bool, int]:
-        """捕获 WM_HOTKEY 消息，发射 activated 信号。"""
-        msg_addr = int(message)
-        msg = ctypes.cast(
-            ctypes.c_void_p(msg_addr), ctypes.POINTER(_MSG)
-        ).contents
-        if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
-            self.activated.emit()
-            # 返回 False 让 Qt 也正常派发消息到窗口过程——
-            # 可能影响 Windows 前台权限的授予时机。
-            return False, 0
-        return False, 0
