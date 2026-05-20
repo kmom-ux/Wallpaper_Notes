@@ -96,10 +96,10 @@ class App:
 
     def run(self) -> None:
         self._window.show()
-        # 窗口显示后再注册热键，传入主窗口 HWND（避免 WA_TranslucentBackground 导致的额外顶层窗口干扰）
-        ok = self._hotkey.register(int(self._window.winId()))
+        # 注册全局热键（RegisterHotKey(NULL) = 线程级，不依赖 HWND 稳定性）
+        ok = self._hotkey.register()
         if not ok:
-            print("⚠ 全局热键注册失败，快捷键可能不可用")
+            print("⚠ 全局热键注册失败，快捷键可能不可用（可能被其他程序占用）")
         QApplication.instance().exec()
 
     def _quit(self) -> None:

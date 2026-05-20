@@ -104,7 +104,7 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         super().__init__(parent)
         self._mod_flags = _modifiers_to_flags(modifiers)
         self._vk = _key_to_vk(key)
-        self._hotkey_id = id(self) & 0xFFFF  # 唯一 ID
+        self._hotkey_id = (id(self) % 0xBFFF) + 1  # 唯一 ID（1..0xBFFF，Windows 热键有效范围）
         self._registered = False
 
     # ── 公开接口 ────────────────────────────────────────────────
@@ -112,27 +112,23 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
     def register(self, target_hwnd: int | None = None) -> bool:
         """注册全局热键。
 
-        target_hwnd: 接收 WM_HOTKEY 的窗口句柄。
-        如果不传，自动从当前应用获取。
+        使用 RegisterHotKey(NULL, ...) 注册在线程消息队列上，
+        不依赖特定 HWND（避免 WA_TranslucentBackground 导致 HWND 重建后失效）。
         """
         if self._registered:
             return True
 
-        if target_hwnd is not None:
-            hwnd = target_hwnd
-        else:
-            hwnd = self._get_hwnd()
-        if hwnd is None:
-            return False
-
         user32 = ctypes.windll.user32
+        # 使用 NULL HWND → WM_HOTKEY 发布到线程消息队列
         result = user32.RegisterHotKey(
-            wintypes.HWND(hwnd),
+            None,  # NULL HWND = thread-wide
             self._hotkey_id,
             self._mod_flags,
             self._vk,
         )
         if result == 0:
+            err = ctypes.windll.kernel32.GetLastError()
+            print(f"⚠ RegisterHotKey 失败 (错误码: {err})")
             return False
 
         QApplication.instance().installNativeEventFilter(self)
@@ -174,21 +170,3 @@ class HotkeyManager(QObject, QAbstractNativeEventFilter):
         if msg.message == WM_HOTKEY and msg.wParam == self._hotkey_id:
             self.activated.emit()
         return False, 0
-
-    # ── 内部 ────────────────────────────────────────────────────
-
-    @staticmethod
-    def _get_hwnd() -> int | None:
-        """尝试从当前应用获取有效的 HWND。"""
-        app = QApplication.instance()
-        if app is None:
-            return None
-        # 优先取活动窗口
-        w = app.activeWindow()
-        if w is not None:
-            return int(w.winId())
-        # 回退：第一个顶层窗口
-        widgets = app.topLevelWidgets()
-        if widgets:
-            return int(widgets[0].winId())
-        return None
