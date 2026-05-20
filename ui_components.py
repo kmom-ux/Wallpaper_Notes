@@ -21,6 +21,8 @@ from PySide6.QtWidgets import QTabWidget
 _TAB_QSS = """
 QTabBar {{
     background-color: {bg};
+    border-top-left-radius: {radius_top}px;
+    border-top-right-radius: {radius_top}px;
 }}
 QTabWidget::pane {{
     background-color: transparent;
@@ -58,6 +60,8 @@ QTextBrowser {{
     font-family: "{font_family}";
     font-size: {font_size}px;
     border: none;
+    border-bottom-left-radius: {pane_br}px;
+    border-bottom-right-radius: {pane_br}px;
     padding: {pv}px {ph}px;
 }}
 """
@@ -69,6 +73,8 @@ QPlainTextEdit {{
     font-family: "{font_family}";
     font-size: {font_size}px;
     border: none;
+    border-bottom-left-radius: {pane_br}px;
+    border-bottom-right-radius: {pane_br}px;
     padding: {pv}px {ph}px;
     selection-background-color: {selection};
 }}
@@ -120,6 +126,7 @@ def generate_tab_bar_qss(theme: dict[str, Any]) -> str:
     tb = theme.get("tab_bar", {})
     return _TAB_QSS.format(
         bg=_s(tb, "background_color", "rgba(245,245,245,0.9)"),
+        radius_top=_i(tb, "radius_top", 0),
         text_color=_s(tb, "text_color", "#666666"),
         font_family=_s(tb, "font_family", "Microsoft YaHei"),
         font_size=_i(tb, "font_size", 14),
@@ -130,9 +137,11 @@ def generate_tab_bar_qss(theme: dict[str, Any]) -> str:
     )
 
 
-def generate_content_qss(theme: dict[str, Any]) -> str:
+def generate_content_qss(theme: dict[str, Any], pane_br: int | None = None) -> str:
     """内容区显示模式样式。"""
     c = theme.get("content", {})
+    if pane_br is None:
+        pane_br = c.get("pane_border_radius", 4)
     return _CONTENT_QSS.format(
         bg=_s(c, "background_color", "transparent"),
         text_color=_s(c, "text_color", "#333333"),
@@ -140,12 +149,15 @@ def generate_content_qss(theme: dict[str, Any]) -> str:
         font_size=_i(c, "font_size", 16),
         ph=_i(c, "padding_h", 16),
         pv=_i(c, "padding_v", 16),
+        pane_br=pane_br,
     )
 
 
-def generate_editor_qss(theme: dict[str, Any]) -> str:
+def generate_editor_qss(theme: dict[str, Any], pane_br: int | None = None) -> str:
     """编辑模式样式。"""
     e = theme.get("editor", {})
+    if pane_br is None:
+        pane_br = theme.get("content", {}).get("pane_border_radius", 4)
     sel = _s(e, "caret_color", "#4A90D9")
     return _EDITOR_QSS.format(
         bg=_s(e, "background_color", "#FAFAFA"),
@@ -155,6 +167,7 @@ def generate_editor_qss(theme: dict[str, Any]) -> str:
         ph=_i(e, "padding_h", 12),
         pv=_i(e, "padding_v", 12),
         selection=sel,
+        pane_br=pane_br,
     )
 
 

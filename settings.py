@@ -490,6 +490,9 @@ class SettingsDialog(QDialog):
         self._tab_size = self._add_spin_row(
             gl, "字号：", tb.get("font_size", 14), 8, 40, suffix="pt"
         )
+        self._tab_radius_top = self._add_spin_row(
+            gl, "上圆角：", tb.get("radius_top", 0), 0, 30, suffix="px"
+        )
         return g
 
     def _build_content_group(self) -> QGroupBox:
@@ -780,6 +783,7 @@ class SettingsDialog(QDialog):
         )
         theme["tab_bar"]["font_family"] = self._tab_font.currentText()
         theme["tab_bar"]["font_size"] = self._tab_size.value()
+        theme["tab_bar"]["radius_top"] = self._tab_radius_top.value()
 
         theme.setdefault("content", {})
         theme["content"]["background_color"] = (

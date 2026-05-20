@@ -9,6 +9,7 @@
     "active_indicator_color": "#4a90d9",
     "font_size": 14,
     "font_family": "Microsoft YaHei",
+    "radius_top": 8,
     "padding_h": 12,
     "padding_v": 8
   },

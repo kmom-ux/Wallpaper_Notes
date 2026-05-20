@@ -494,8 +494,8 @@ class WallpaperWindow(QWidget):
             editor: QPlainTextEdit = stack.widget(1)
             viewer.viewport().setAutoFillBackground(False)
             editor.viewport().setAutoFillBackground(False)
-            viewer.setStyleSheet(generate_content_qss(theme))
-            editor.setStyleSheet(generate_editor_qss(theme))
+            viewer.setStyleSheet(generate_content_qss(theme, final_br))
+            editor.setStyleSheet(generate_editor_qss(theme, final_br))
             # 文字辉光（先移除旧的以免叠加）
             viewer.viewport().setGraphicsEffect(None)
             editor.viewport().setGraphicsEffect(None)
@@ -619,7 +619,7 @@ class WallpaperWindow(QWidget):
         viewer.setReadOnly(True)
         viewer.setFrameShape(QTextBrowser.Shape.NoFrame)
         viewer.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        viewer.setStyleSheet(generate_content_qss(self._theme))
+        viewer.setStyleSheet(generate_content_qss(self._theme, final_br))
         viewer.setHtml(render(content, self._theme))
         viewer.viewport().setAutoFillBackground(False)  # 透出 QStackedWidget 边框
         # 文字辉光（基于文字自身颜色，按距离变暗）
@@ -637,7 +637,7 @@ class WallpaperWindow(QWidget):
         editor.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         editor.setTabStopDistance(32)
         editor.setPlainText(content)
-        editor.setStyleSheet(generate_editor_qss(self._theme))
+        editor.setStyleSheet(generate_editor_qss(self._theme, final_br))
         editor.viewport().installEventFilter(self)  # Esc 检测
         stack.addWidget(editor)  # index 1
 
