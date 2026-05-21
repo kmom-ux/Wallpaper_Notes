@@ -3,10 +3,10 @@
     "border_radius": 0
   },
   "tab_bar": {
-    "background_color": "#ffffff",
-    "text_color": "#000000",
-    "active_text_color": "#55aaff",
-    "active_indicator_color": "#4a90d9",
+    "background_color": "rgba(255,255,255,0.87)",
+    "text_color": "#5e5e5e",
+    "active_text_color": "#000000",
+    "active_indicator_color": "#55ffff",
     "font_size": 14,
     "font_family": "Microsoft YaHei",
     "radius_top": 8,
@@ -14,9 +14,9 @@
     "padding_v": 8
   },
   "content": {
-    "background_color": "rgba(0,0,0,0.16)",
+    "background_color": "rgba(0,0,0,0.11)",
     "text_color": "#55ffff",
-    "font_size": 14,
+    "font_size": 16,
     "font_family": "Microsoft YaHei UI",
     "line_height": 1.6,
     "padding_h": 16,
@@ -31,7 +31,7 @@
     "enable_glow": false,
     "enable_frost": false,
     "frost_intensity": 0.15,
-    "frost_grain": 1
+    "frost_grain": 2
   },
   "editor": {
     "background_color": "#fafafa",

@@ -34,6 +34,7 @@
 
 ## 📸 截图
 
+![](screenshots/wallpaper-overview3.png)
 ![](screenshots/wallpaper-overview.png)
 ![](screenshots/wallpaper-overview2.png)
 *桌面全貌——便签直接贴在壁纸上，不挡应用窗口，融入桌面环境*

@@ -20,8 +20,9 @@ fonts/
 
 # Config (user-specific overrides)
 # If you customize these, uncomment to keep them out of git:
-# config.json
-# theme.json
+config.json
+theme.json
 notes/*
 !notes/.gitkeep
+!notes/使用指南.md
 开发者指南/深度分析报告.md
