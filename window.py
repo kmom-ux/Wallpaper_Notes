@@ -401,15 +401,22 @@ class WallpaperWindow(QWidget):
         """文件内容被外部修改时刷新显示。
 
         仅在当前处于显示模式时才刷新——编辑模式下不覆盖用户正在编辑的内容。
+        刷新后尝试保持滚动位置（百分比），避免编辑保存后 watchdog 回调
+        把刚刚恢复的滚动位置清零。
         """
         fp = str(filepath)
+        # 己保存的文件跳过——viewer 已经是最新，重绘只会抖一下滚动位置
+        if getattr(self, '_just_saved', None) and fp in self._just_saved:
+            return
         idx = self._find_tab_index(fp)
         if idx < 0:
             return
         stack: QStackedWidget = self._tabs.widget(idx)
         viewer: QTextBrowser = stack.widget(0)
+        scroll_pct = self._get_scroll_pct(viewer)
         content = self._read_file(fp)
         viewer.setHtml(render(content, self._theme))
+        self._set_scroll_pct(viewer, scroll_pct)
 
     def bring_to_front_and_edit(self) -> None:
         """快捷键唤出：恢复窗口 → 置前聚焦 → 编辑模式。
@@ -807,21 +814,40 @@ class WallpaperWindow(QWidget):
 
     # ── 模式切换 ────────────────────────────────────────────────
 
+    @staticmethod
+    def _get_scroll_pct(widget) -> float:
+        """读取 widget 垂直滚动百分比（0.0 ~ 1.0）。"""
+        sb = widget.verticalScrollBar()
+        max_val = sb.maximum()
+        return sb.value() / max_val if max_val > 0 else 0.0
+
+    @staticmethod
+    def _set_scroll_pct(widget, pct: float) -> None:
+        """按百分比设置 widget 垂直滚动位置（同步操作，关闭绘制避免闪烁）。"""
+        sb = widget.verticalScrollBar()
+        max_val = sb.maximum()
+        if max_val > 0:
+            widget.setUpdatesEnabled(False)
+            sb.setValue(round(pct * max_val))
+            widget.setUpdatesEnabled(True)
+
     def _switch_edit(self) -> None:
         """切换到编辑模式（当前标签页）。"""
         if not self._has_tabs():
             return
-        self._ensure_viewer_latest()  # 编辑前刷新显示层
         stack = self._current_stack()
         if stack is not None:
+            viewer = stack.widget(0)
+            scroll_pct = self._get_scroll_pct(viewer)
+
             stack.setCurrentIndex(1)
             editor = stack.widget(1).findChild(QPlainTextEdit) if stack.widget(1) else None
-            # 从文件重读内容到编辑器，避免显示层更新后编辑器仍持有旧内容
             fp = self._current_filepath()
             if editor:
                 if fp:
                     editor.setPlainText(self._read_file(fp))
                 editor.setFocus()
+                self._set_scroll_pct(editor, scroll_pct)
 
     def _save_and_switch_view(self) -> None:
         """保存并切换到显示模式。"""
@@ -832,18 +858,24 @@ class WallpaperWindow(QWidget):
             return
 
         editor = stack.widget(1).findChild(QPlainTextEdit) if stack.widget(1) else None
+        scroll_pct = self._get_scroll_pct(editor) if editor else 0.0
         content = editor.toPlainText() if editor else ""
         fp = self._current_filepath()
+
+        # 标记此文件为己保存——watchdog 的 refresh_current_tab 跳过它（viewer 已经是最新）
+        if fp:
+            self._mark_just_saved(fp)
 
         # 保存回调
         save_cb = self._callbacks.get("on_save_content")
         if save_cb:
             save_cb(fp, content)
 
-        # 刷新显示
+        # 刷新显示（会重置滚动位置）
         viewer: QTextBrowser = stack.widget(0)
         viewer.setHtml(render(content, self._theme))
         stack.setCurrentIndex(0)
+        self._set_scroll_pct(viewer, scroll_pct)
 
     def _ensure_viewer_latest(self) -> None:
         """确保当前标签页的显示层是最新内容。"""
@@ -857,6 +889,23 @@ class WallpaperWindow(QWidget):
             content = self._read_file(fp)
             viewer: QTextBrowser = stack.widget(0)
             viewer.setHtml(render(content, self._theme))
+
+    # ── _just_saved 标记管理（防 watchdog 回刷）────────────────
+
+    def _mark_just_saved(self, fp: str) -> None:
+        """标记文件为己保存，刷新 3 秒看门狗——连续保存时窗口自动续期。"""
+        if not hasattr(self, '_just_saved'):
+            self._just_saved: set[str] = set()
+        self._just_saved.add(fp)
+        # 重启单一定时器（确保是最后一个保存 3 秒后才清除）
+        if hasattr(self, '_just_saved_timer') and self._just_saved_timer is not None:
+            self._just_saved_timer.stop()
+        self._just_saved_timer = QTimer.singleShot(3000, self._clear_just_saved)
+
+    def _clear_just_saved(self) -> None:
+        """看门狗到期，清除所有标记。"""
+        self._just_saved.clear()
+        self._just_saved_timer = None
 
     # ── 便签操作（回调）─────────────────────────────────────────
 
@@ -907,16 +956,20 @@ class WallpaperWindow(QWidget):
                     cb(filepath)
 
     def _on_tab_changed(self, index: int) -> None:
-        """标签切换：保存上一个标签的编辑内容，刷新新标签。"""
+        """标签切换：保存上一个标签的编辑内容（如在编辑模式），不刷新新标签（由 watchdog 自动处理）。"""
         # 保存上一个标签的编辑内容
         prev = getattr(self, '_prev_tab_index', -1)
         if prev >= 0 and prev < self._tabs.count():
             prev_stack: QStackedWidget = self._tabs.widget(prev)
             if prev_stack is not None and prev_stack.currentIndex() == 1:
                 editor = prev_stack.widget(1).findChild(QPlainTextEdit) if prev_stack.widget(1) else None
+                scroll_pct = self._get_scroll_pct(editor) if editor else 0.0
                 content = editor.toPlainText() if editor else ""
                 prev_stack_w = self._tabs.widget(prev)
                 prev_fp = self._fp_by_widget.get(id(prev_stack_w), "") if prev_stack_w else ""
+                # 标记为己保存——避免 watchdog 回刷导致滚动抖动
+                if prev_fp:
+                    self._mark_just_saved(prev_fp)
                 save_cb = self._callbacks.get("on_save_content")
                 if save_cb and prev_fp:
                     save_cb(prev_fp, content)
@@ -924,15 +977,9 @@ class WallpaperWindow(QWidget):
                 viewer: QTextBrowser = prev_stack.widget(0)
                 viewer.setHtml(render(content, self._theme))
                 prev_stack.setCurrentIndex(0)
+                self._set_scroll_pct(viewer, scroll_pct)
 
         self._prev_tab_index = index
-
-        # 刷新新标签的显示内容
-        if index >= 0:
-            fp_w = self._tabs.widget(index)
-            fp = self._fp_by_widget.get(id(fp_w), "") if fp_w else ""
-            if fp:
-                self.refresh_current_tab(fp)
 
         # 确保磨砂噪点层在最上层（QStackedWidget 切换会覆盖子widget）
         self._ensure_noise_ontop()
