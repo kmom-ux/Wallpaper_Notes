@@ -11,7 +11,7 @@
   └── QTabWidget（标签栏）
       └── 每个标签页 = QStackedWidget
           ├── [0] QTextBrowser   —— 显示模式
-          └── [1] QPlainTextEdit —— 编辑模式
+          └── [1] QWidget(容器)+QPlainTextEdit —— 编辑模式
 
 边界：
 - 不直接操作文件（通过 callbacks）
@@ -542,17 +542,35 @@ class WallpaperWindow(QWidget):
             # 更新内容区边框 + 玻璃
             stack.setStyleSheet(border_qss)
             viewer: QTextBrowser = stack.widget(0)
-            editor: QPlainTextEdit = stack.widget(1)
+            editor_container = stack.widget(1)
+            editor: QPlainTextEdit = (
+                editor_container.findChild(QPlainTextEdit) if editor_container else None
+            )
             viewer.viewport().setAutoFillBackground(False)
-            editor.viewport().setAutoFillBackground(False)
+            if editor:
+                editor.viewport().setAutoFillBackground(False)
             viewer.setStyleSheet(generate_content_qss(theme, final_br))
-            editor.setStyleSheet(generate_editor_qss(theme, final_br))
+            if editor:
+                editor.setStyleSheet(generate_editor_qss(theme, final_br))
+            # 同步容器背景 + 布局 margins（提供视觉间距，替代 QSS padding）
+            if editor_container:
+                e = theme.get("editor", {})
+                bg = e.get("background_color", "#FAFAFA")
+                ph = e.get("padding_h", 12)
+                pv = e.get("padding_v", 12)
+                editor_container.setStyleSheet(
+                    f"background-color: {bg}; border: none;"
+                    f"border-bottom-left-radius: {final_br}px;"
+                    f"border-bottom-right-radius: {final_br}px;"
+                )
+                editor_container.layout().setContentsMargins(ph, pv, ph, pv)
             # 文字辉光（先移除旧的以免叠加）
             viewer.viewport().setGraphicsEffect(None)
-            editor.viewport().setGraphicsEffect(None)
+            if editor:
+                editor.viewport().setGraphicsEffect(None)
             if enable_glow:
                 viewer.viewport().setGraphicsEffect(TextGlowEffect(blur_radius=3))
-                editor.viewport().setGraphicsEffect(TextGlowEffect(blur_radius=3))
+            # 编辑器不应用 QGraphicsEffect——辉光会干扰 IME 拼音候选框定位
             # 重新渲染 Markdown（文字 CSS 可能变了）
             filepath = self._fp_by_widget.get(id(stack), "")
             if filepath:
@@ -641,7 +659,7 @@ class WallpaperWindow(QWidget):
 
         返回的 QStackedWidget：
           - index 0: QTextBrowser（显示模式，已加载 Markdown）
-          - index 1: QPlainTextEdit（编辑模式，已加载原始文本）
+          - index 1: QWidget(容器)+QPlainTextEdit（编辑模式，已加载原始文本）
         """
         stack = QStackedWidget()
         # 内容区边框 + 假毛玻璃背景
@@ -680,17 +698,34 @@ class WallpaperWindow(QWidget):
         stack.addWidget(viewer)  # index 0
 
         # ── 编辑层 ──
+        # 用容器布局 margin 提供视觉间距，避免 QSS padding 破坏 IME 坐标链路
+        e = self._theme.get("editor", {})
+        bg = e.get("background_color", "#FAFAFA")
+        ph = e.get("padding_h", 12)
+        pv = e.get("padding_v", 12)
+        editor_container = QWidget()
+        editor_container.setObjectName("editor_container")
+        editor_container = QWidget()
+        editor_container.setObjectName("editor_container")
+        editor_container.setStyleSheet(
+            f"background-color: {bg}; border: none;"
+            f"border-bottom-left-radius: {final_br}px;"
+            f"border-bottom-right-radius: {final_br}px;"
+        )
+        editor_layout = QVBoxLayout(editor_container)
+        editor_layout.setContentsMargins(ph, pv, ph, pv)
+        editor_layout.setSpacing(0)
+
         editor = QPlainTextEdit()
-        editor.viewport().setAutoFillBackground(False)  # 透出 QStackedWidget 边框
-        # 编辑层文字辉光
-        if ct.get("enable_glow", False):
-            editor.viewport().setGraphicsEffect(TextGlowEffect(blur_radius=3))
+        editor.viewport().setAutoFillBackground(False)  # 透出边框
+        # 编辑层不应用 QGraphicsEffect——辉光会干扰 IME 拼音候选框定位
         editor.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         editor.setTabStopDistance(32)
         editor.setPlainText(content)
         editor.setStyleSheet(generate_editor_qss(self._theme, final_br))
         editor.viewport().installEventFilter(self)  # Esc 检测
-        stack.addWidget(editor)  # index 1
+        editor_layout.addWidget(editor)
+        stack.addWidget(editor_container)  # index 1
 
         # 初始：显示模式
         stack.setCurrentIndex(0)
@@ -780,12 +815,13 @@ class WallpaperWindow(QWidget):
         stack = self._current_stack()
         if stack is not None:
             stack.setCurrentIndex(1)
-            editor: QPlainTextEdit = stack.widget(1)
+            editor = stack.widget(1).findChild(QPlainTextEdit) if stack.widget(1) else None
             # 从文件重读内容到编辑器，避免显示层更新后编辑器仍持有旧内容
             fp = self._current_filepath()
-            if fp:
-                editor.setPlainText(self._read_file(fp))
-            editor.setFocus()
+            if editor:
+                if fp:
+                    editor.setPlainText(self._read_file(fp))
+                editor.setFocus()
 
     def _save_and_switch_view(self) -> None:
         """保存并切换到显示模式。"""
@@ -795,8 +831,8 @@ class WallpaperWindow(QWidget):
         if stack is None or stack.currentIndex() != 1:
             return
 
-        editor: QPlainTextEdit = stack.widget(1)
-        content = editor.toPlainText()
+        editor = stack.widget(1).findChild(QPlainTextEdit) if stack.widget(1) else None
+        content = editor.toPlainText() if editor else ""
         fp = self._current_filepath()
 
         # 保存回调
@@ -877,8 +913,8 @@ class WallpaperWindow(QWidget):
         if prev >= 0 and prev < self._tabs.count():
             prev_stack: QStackedWidget = self._tabs.widget(prev)
             if prev_stack is not None and prev_stack.currentIndex() == 1:
-                editor: QPlainTextEdit = prev_stack.widget(1)
-                content = editor.toPlainText()
+                editor = prev_stack.widget(1).findChild(QPlainTextEdit) if prev_stack.widget(1) else None
+                content = editor.toPlainText() if editor else ""
                 prev_stack_w = self._tabs.widget(prev)
                 prev_fp = self._fp_by_widget.get(id(prev_stack_w), "") if prev_stack_w else ""
                 save_cb = self._callbacks.get("on_save_content")

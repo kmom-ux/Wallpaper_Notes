@@ -73,10 +73,7 @@ QPlainTextEdit {{
     font-family: "{font_family}";
     font-size: {font_size}px;
     border: none;
-    border-bottom-left-radius: {pane_br}px;
-    border-bottom-right-radius: {pane_br}px;
-    padding: {pv}px {ph}px;
-    selection-background-color: {selection};
+    selection-background-color: {selection};  /* padding+border-radius 已移除——由容器 margin + radius 提供 */
 }}
 """
 
@@ -164,11 +161,8 @@ def generate_editor_qss(theme: dict[str, Any], pane_br: int | None = None) -> st
         text_color=_s(e, "text_color", "#333333"),
         font_family=_s(e, "font_family", "Cascadia Code, Consolas, monospace"),
         font_size=_i(e, "font_size", 15),
-        ph=_i(e, "padding_h", 12),
-        pv=_i(e, "padding_v", 12),
         selection=sel,
-        pane_br=pane_br,
-    )
+    )  # ph/pv 不再出现在 QSS 模板——由容器布局 margins 提供
 
 
 def generate_scrollbar_qss(theme: dict[str, Any]) -> str:
