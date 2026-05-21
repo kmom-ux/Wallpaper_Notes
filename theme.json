@@ -3,9 +3,9 @@
     "border_radius": 0
   },
   "tab_bar": {
-    "background_color": "rgba(255,255,255,0.00)",
-    "text_color": "#2b2b2b",
-    "active_text_color": "#000000",
+    "background_color": "#ffffff",
+    "text_color": "#000000",
+    "active_text_color": "#55aaff",
     "active_indicator_color": "#4a90d9",
     "font_size": 14,
     "font_family": "Microsoft YaHei",
@@ -14,7 +14,7 @@
     "padding_v": 8
   },
   "content": {
-    "background_color": "rgba(0,0,0,0.00)",
+    "background_color": "rgba(0,0,0,0.16)",
     "text_color": "#55ffff",
     "font_size": 14,
     "font_family": "Microsoft YaHei UI",
